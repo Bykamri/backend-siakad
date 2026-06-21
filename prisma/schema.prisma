@@ -1,0 +1,213 @@
+// =====================================================================
+// PRISMA SCHEMA: dbakademik
+// Mengikuti skema SQL yang sudah divalidasi (dbakademik_schema.sql)
+// =====================================================================
+
+generator client {
+  provider   = "prisma-client"
+  output     = "../generated/prisma"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "mysql"
+  // url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------
+// ENUMS
+// ---------------------------------------------------------------------
+
+enum JenisKelamin {
+  L
+  P
+}
+
+enum StatusMahasiswa {
+  aktif
+  lulus
+}
+
+enum Hari {
+  Senin
+  Selasa
+  Rabu
+  Kamis
+  Jumat
+  Sabtu
+}
+
+enum Semester {
+  Ganjil
+  Genap
+}
+
+enum Role {
+  admin
+  dosen
+  mahasiswa
+}
+
+// ---------------------------------------------------------------------
+// PRODI (Program Studi)
+// ---------------------------------------------------------------------
+model Prodi {
+  kodeProdi     String      @id @map("kode_prodi") @db.VarChar(2) 
+  namaProdi     String      @map("nama_prodi") @db.VarChar(100)
+  kodeFakultas  String      @map("kode_fakultas") @db.VarChar(1) 
+  urutanProdi   String      @map("urutan_prodi") @db.VarChar(1)  
+
+  mahasiswa     Mahasiswa[]
+  dosen         Dosen[]     // Tambahan relasi ke Dosen
+
+  @@map("prodi")
+}
+
+// ---------------------------------------------------------------------
+// DOSEN
+// ---------------------------------------------------------------------
+model Dosen {
+  kodedsn      String       @id @db.VarChar(10)
+  namaDosen    String       @map("nama_dosen") @db.VarChar(100)
+  tglLahir     DateTime     @map("tgl_lahir") @db.Date
+  
+  // Ganti `prodi String` menjadi relasi `kodeProdi`
+  kodeProdi    String       @map("kode_prodi") @db.VarChar(2) 
+  
+  statusAktif  Boolean      @default(true) @map("status_aktif")
+  foto         String?      @db.VarChar(255)
+  jenisKelamin JenisKelamin @map("jenis_kelamin")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  prodi         Prodi       @relation(fields: [kodeProdi], references: [kodeProdi])
+  mahasiswaWali Mahasiswa[] @relation("DosenWali")
+  jamKelas      JamKelas[]
+  user          User?
+
+  @@index([kodeProdi], map: "idx_dosen_prodi")
+  @@map("dosen")
+}
+
+// ---------------------------------------------------------------------
+// MAHASISWA
+// ---------------------------------------------------------------------
+model Mahasiswa {
+  nim           String          @id @db.VarChar(15)
+  nama          String          @db.VarChar(100)
+  tglLahir      DateTime        @map("tgl_lahir") @db.Date
+  jenisKelamin  JenisKelamin    @map("jenis_kelamin")
+  statusMhs     StatusMahasiswa @default(aktif) @map("status_mhs")
+  ijazah        String?         @db.VarChar(255)
+  foto          String?         @db.VarChar(255)
+  
+  // Relasi ke Prodi
+  kodeProdi     String          @map("kode_prodi") @db.VarChar(2) 
+  
+  // Dibuat opsional karena diset belakangan oleh admin
+  kodedsnWali   String?         @map("kodedsn_wali") @db.VarChar(10) 
+  
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  prodi         Prodi   @relation(fields: [kodeProdi], references: [kodeProdi])
+  dosenWali     Dosen?  @relation("DosenWali", fields: [kodedsnWali], references: [kodedsn])
+  krs           Krs[]
+  user          User?
+
+  @@index([kodedsnWali], map: "idx_mhs_dosenwali")
+  @@index([kodeProdi], map: "idx_mhs_prodi")
+  @@map("mahasiswa")
+}
+// ---------------------------------------------------------------------
+// MATAKULIAH
+// ---------------------------------------------------------------------
+model Matakuliah {
+  kodemk    String   @id @db.VarChar(10)
+  namamk    String   @db.VarChar(100)
+  sks       Int      @db.UnsignedTinyInt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  jamKelas JamKelas[]
+
+  @@map("matakuliah")
+}
+
+// ---------------------------------------------------------------------
+// JAM_KELAS
+// Tiap matakuliah maksimal 3 baris (nama_kelas A/B/C), tiap baris
+// diampu oleh 1 dosen (max 3 dosen per matakuliah karena uq_mk_dosen
+// + trigger pembatas 3 baris yang sudah dipasang di level SQL).
+// ---------------------------------------------------------------------
+model JamKelas {
+  idJamkelas Int      @id @default(autoincrement()) @map("id_jamkelas")
+  kodemk     String   @db.VarChar(10)
+  kodedsn    String   @db.VarChar(10)
+  namaKelas  String   @map("nama_kelas") @db.VarChar(5)
+  hari       Hari
+  jamMulai   DateTime @map("jam_mulai") @db.Time(0)
+  jamSelesai DateTime @map("jam_selesai") @db.Time(0)
+  ruangan    String?  @db.VarChar(20)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  matakuliah Matakuliah @relation(fields: [kodemk], references: [kodemk], onDelete: Cascade)
+  dosen      Dosen      @relation(fields: [kodedsn], references: [kodedsn])
+  krs        Krs[]
+
+  @@unique([kodemk, namaKelas], map: "uq_mk_kelas")
+  @@unique([kodemk, kodedsn], map: "uq_mk_dosen")
+  @@index([kodemk], map: "idx_jamkelas_mk")
+  @@index([kodedsn], map: "idx_jamkelas_dosen")
+  @@map("jam_kelas")
+}
+
+// ---------------------------------------------------------------------
+// KRS (Kartu Rencana Studi)
+// Dosen penilai TIDAK disimpan langsung di sini — didapat lewat
+// relasi idJamkelas -> JamKelas -> Dosen, supaya selalu konsisten
+// dengan dosen pengampu kelas yang dipilih mahasiswa.
+// ---------------------------------------------------------------------
+model Krs {
+  idKrs         Int       @id @default(autoincrement()) @map("id_krs")
+  nim           String    @db.VarChar(15)
+  idJamkelas    Int       @map("id_jamkelas")
+  tahunAkademik String    @map("tahun_akademik") @db.VarChar(9)
+  semester      Semester
+  nilaiAngka    Decimal?  @map("nilai_angka") @db.Decimal(5, 2)
+  nilaiHuruf    String?   @map("nilai_huruf") @db.VarChar(2)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  mahasiswa Mahasiswa @relation(fields: [nim], references: [nim], onDelete: Cascade)
+  jamKelas  JamKelas  @relation(fields: [idJamkelas], references: [idJamkelas])
+
+  @@unique([nim, idJamkelas, tahunAkademik, semester], map: "uq_krs_mhs_kelas_periode")
+  @@index([nim], map: "idx_krs_mhs")
+  @@index([idJamkelas], map: "idx_krs_jamkelas")
+  @@map("krs")
+}
+
+// ---------------------------------------------------------------------
+// USERS (autentikasi & role)
+// Validasi "role harus konsisten dengan nim/kodedsn yang diisi"
+// ditegakkan via trigger di level SQL (trg_users_role_check_*),
+// dan didobel-cek di Service layer sebelum insert/update.
+// ---------------------------------------------------------------------
+model User {
+  idUser    Int       @id @default(autoincrement()) @map("id_user")
+  username  String    @unique(map: "uq_username") @db.VarChar(50)
+  password  String    @db.VarChar(255)
+  role      Role
+  nim       String?   @unique(map: "uq_users_nim") @db.VarChar(15)
+  kodedsn   String?   @unique(map: "uq_users_kodedsn") @db.VarChar(10)
+  isActive  Boolean   @default(true) @map("is_active")
+  lastLogin DateTime? @map("last_login")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  mahasiswa Mahasiswa? @relation(fields: [nim], references: [nim], onDelete: Cascade)
+  dosen     Dosen?     @relation(fields: [kodedsn], references: [kodedsn], onDelete: Cascade)
+
+  @@map("users")
+}
