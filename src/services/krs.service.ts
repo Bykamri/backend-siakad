@@ -1,18 +1,5 @@
 import { prisma } from "../utils/prisma";
-
-interface AmbilKrsInput {
-  nim: string;
-  idJamkelas: number;
-  tahunAkademik: string; // contoh: "2025/2026"
-  semester: "Ganjil" | "Genap";
-}
-
-interface InputNilaiInput {
-  idKrs: number;
-  nilaiAngka: number;
-  nilaiHuruf?: string;
-  kodedsnPenilai: string; // dosen yang sedang login & melakukan input nilai
-}
+import type { AmbilKrsInput, InputNilaiInput } from "../types/krs";
 
 export const krsService = {
   // Mahasiswa mengambil matakuliah dengan memilih jam_kelas tertentu.

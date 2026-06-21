@@ -11,7 +11,13 @@ export const matakuliahRoutes = new Elysia({ prefix: "/matakuliah" })
       const data = await matakuliahService.getAll();
       return { success: true, data };
     },
-    { detail: { summary: "Daftar semua matakuliah + jam kelas + pengampu", tags: ["Matakuliah"] } }
+    {
+      detail: {
+        summary: "[Admin, Dosen, Mahasiswa] Daftar semua matakuliah + jam kelas + pengampu",
+        description: "Bisa diakses semua role yang sudah login, tanpa pembatasan tambahan.",
+        tags: ["Matakuliah"],
+      },
+    }
   )
 
   .get(
@@ -25,7 +31,13 @@ export const matakuliahRoutes = new Elysia({ prefix: "/matakuliah" })
         return { success: false, message: (err as Error).message };
       }
     },
-    { detail: { summary: "Detail matakuliah + jam kelas + mahasiswa yang ambil", tags: ["Matakuliah"] } }
+    {
+      detail: {
+        summary: "[Admin, Dosen, Mahasiswa] Detail matakuliah + jam kelas + mahasiswa yang ambil",
+        description: "Bisa diakses semua role yang sudah login, tanpa pembatasan tambahan.",
+        tags: ["Matakuliah"],
+      },
+    }
   )
 
   // Hanya admin yang boleh kelola matakuliah & jam_kelas
@@ -48,7 +60,7 @@ export const matakuliahRoutes = new Elysia({ prefix: "/matakuliah" })
         namamk: t.String(),
         sks: t.Integer({ minimum: 1, maximum: 6 }),
       }),
-      detail: { summary: "Tambah matakuliah baru (admin only)", tags: ["Matakuliah"] },
+      detail: { summary: "[Admin] Tambah matakuliah baru", tags: ["Matakuliah"] },
     }
   )
 
@@ -68,7 +80,7 @@ export const matakuliahRoutes = new Elysia({ prefix: "/matakuliah" })
         namamk: t.Optional(t.String()),
         sks: t.Optional(t.Integer({ minimum: 1, maximum: 6 })),
       }),
-      detail: { summary: "Update matakuliah (admin only)", tags: ["Matakuliah"] },
+      detail: { summary: "[Admin] Update matakuliah", tags: ["Matakuliah"] },
     }
   )
 
@@ -83,7 +95,7 @@ export const matakuliahRoutes = new Elysia({ prefix: "/matakuliah" })
         return { success: false, message: (err as Error).message };
       }
     },
-    { detail: { summary: "Hapus matakuliah (admin only)", tags: ["Matakuliah"] } }
+    { detail: { summary: "[Admin] Hapus matakuliah", tags: ["Matakuliah"] } }
   )
 
   // --- Jam Kelas (sub-resource dari matakuliah) ---
@@ -116,7 +128,8 @@ export const matakuliahRoutes = new Elysia({ prefix: "/matakuliah" })
         ruangan: t.Optional(t.String()),
       }),
       detail: {
-        summary: "Tambah jam kelas baru untuk matakuliah (max 3 per matakuliah, admin only)",
+        summary: "[Admin] Tambah jam kelas baru untuk matakuliah",
+        description: "Maksimal 3 jam kelas (dosen pengampu) per matakuliah, ditegakkan trigger DB.",
         tags: ["Matakuliah"],
       },
     }
@@ -133,5 +146,5 @@ export const matakuliahRoutes = new Elysia({ prefix: "/matakuliah" })
         return { success: false, message: (err as Error).message };
       }
     },
-    { detail: { summary: "Hapus jam kelas (admin only)", tags: ["Matakuliah"] } }
+    { detail: { summary: "[Admin] Hapus jam kelas", tags: ["Matakuliah"] } }
   );

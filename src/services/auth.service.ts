@@ -1,80 +1,39 @@
 import { prisma } from "../utils/prisma";
 import { hashPassword, verifyPassword } from "../utils/password";
+import { hitungAngkatan, hitungNomorUrutBerikutnya, formatNim } from "./nim.service";
 import { Prisma } from "../../generated/prisma/client";
 import type { JenisKelamin } from "../../generated/prisma/client";
+import type { RegisterMahasiswaInput, LoginInput } from "../types/auth";
 
-interface RegisterMahasiswaInput {
-  namaLengkap: string;
-  tglLahir: string;
-  jenisKelamin: JenisKelamin;
-  namaProdi: string; // nama prodi bebas, contoh: "Teknik Informatika"
-  password: string;
-}
-
-interface LoginInput {
-  username: string;
-  password: string;
-}
 
 // Batas percobaan ulang jika nomor urut NIM bentrok (race condition saat
-// dua pendaftaran terjadi nyaris bersamaan untuk prodi & angkatan yang sama)
+// dua pendaftaran terjadi nyaris bersamaan untuk prodi yang sama)
 const MAX_NIM_RETRY = 5;
 
 export const authService = {
-  async register(input: RegisterMahasiswaInput) {
-    const { namaLengkap, tglLahir, jenisKelamin, namaProdi, password } = input;
+  // Registrasi mandiri -- SELALU role mahasiswa.
+  // NIM & angkatan di-generate otomatis, username = NIM, dosen wali
+  // dikosongkan dulu (NULL) sampai di-assign admin secara manual.
+  async registerMahasiswa(input: RegisterMahasiswaInput) {
+    const { namaLengkap, tglLahir, jenisKelamin, kodeProdi, password } = input;
 
-    // 1. Cari prodi LANGSUNG dari database berdasarkan namanya.
-    //    Tidak ada lagi tabel translasi manual (TRANSLASI_PRODI) yang harus
-    //    di-update setiap kali ada prodi baru -- sumber kebenarannya cuma
-    //    satu, yaitu tabel `prodi`. Kolom `nama_prodi` memakai collation
-    //    utf8mb4_unicode_ci di MariaDB sehingga pencocokan otomatis
-    //    case-insensitive ("teknik informatika" == "Teknik Informatika").
-    const namaProdiClean = namaProdi.trim().replace(/\s+/g, " ");
-    const prodi = await prisma.prodi.findFirst({
-      where: { namaProdi: namaProdiClean },
-    });
-
+    const prodi = await prisma.prodi.findUnique({ where: { kodeProdi } });
     if (!prodi) {
-      throw new Error(
-        `Program studi '${namaProdi}' tidak ditemukan. Periksa kembali penulisan nama prodi.`
-      );
+      throw new Error(`Program studi dengan kode ${kodeProdi} tidak ditemukan`);
     }
 
-    const { kodeProdi, kodeFakultas, urutanProdi } = prodi;
-
-    // 2. Kalkulasi tahun angkatan (tahun ajaran baru dimulai bulan Juli)
-    const now = new Date();
-    const month = now.getMonth() + 1;
-    let yearNum = now.getFullYear();
-    if (month >= 7) {
-      yearNum += 1;
-    }
-    const angkatan = yearNum.toString().slice(-2);
-
-    // Prefix NIM: 1 + Kode Fakultas + Urutan Prodi + Angkatan
-    // (nomor urut 3 digit terakhir ditambahkan saat generate, lihat di bawah)
-    const nimPrefix = `1${kodeFakultas}${urutanProdi}${angkatan}`;
-
+    const angkatan = hitungAngkatan(new Date());
     const hashed = await hashPassword(password);
 
-    // 3. Generate & simpan NIM. Diberi retry karena nomor urut dihitung
-    //    dengan membaca data lalu menulis (read-then-write) -- kalau dua
-    //    request register masuk nyaris bersamaan untuk prodi & angkatan yang
-    //    sama, keduanya bisa menghitung urutan yang sama dan NIM bentrok
-    //    (unique constraint). Saat itu terjadi, hitung ulang & coba lagi.
+    // Generate & simpan NIM dalam transaksi, dengan retry jika terjadi
+    // race condition (dua pendaftaran nyaris bersamaan di prodi yang sama
+    // bisa menghitung nomor urut yang sama -> unique constraint NIM bentrok).
     let lastError: unknown;
     for (let attempt = 0; attempt < MAX_NIM_RETRY; attempt++) {
       try {
         return await prisma.$transaction(async (tx) => {
-          // Hitung urutan HANYA dari mahasiswa dengan prefix NIM yang sama
-          // (prodi + angkatan yang sama) -- nomor urut otomatis reset setiap
-          // tahun ajaran baru, tidak terus menumpuk dari tahun-tahun sebelumnya.
-          const countMhs = await tx.mahasiswa.count({
-            where: { nim: { startsWith: nimPrefix } },
-          });
-          const urutan = (countMhs + 1).toString().padStart(3, "0");
-          const nim = `${nimPrefix}${urutan}`;
+          const nomorUrut = await hitungNomorUrutBerikutnya(tx, kodeProdi);
+          const nim = formatNim(kodeProdi, angkatan, nomorUrut);
 
           const mhs = await tx.mahasiswa.create({
             data: {
@@ -83,6 +42,8 @@ export const authService = {
               tglLahir: new Date(tglLahir),
               jenisKelamin,
               kodeProdi,
+              angkatan,
+              kodedsnWali: null,
               user: {
                 create: {
                   username: nim,
@@ -105,13 +66,13 @@ export const authService = {
 
           return mhs.user;
         });
-      } catch (err) {
+      } catch (err: unknown) {
         // P2002 = unique constraint violation -> kemungkinan besar NIM bentrok,
         // coba hitung & generate ulang. Error lain langsung dilempar ke caller.
-        if (
-          err instanceof Prisma.PrismaClientKnownRequestError &&
-          err.code === "P2002"
-        ) {
+        const isUniqueConflict =
+          err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+
+        if (isUniqueConflict) {
           lastError = err;
           continue;
         }
@@ -121,6 +82,47 @@ export const authService = {
 
     console.error("Gagal generate NIM unik setelah beberapa kali percobaan:", lastError);
     throw new Error("Gagal membuat NIM, silakan coba daftar ulang.");
+  },
+
+  // Dipakai admin untuk membuat akun ADMIN atau DOSEN (bukan mahasiswa,
+  // karena mahasiswa selalu lewat self-register di atas).
+  async registerStaff(input: {
+    username: string;
+    password: string;
+    role: "admin" | "dosen";
+    kodedsn?: string;
+  }) {
+    const { username, password, role, kodedsn } = input;
+
+    if (role === "dosen" && !kodedsn) {
+      throw new Error("Role dosen wajib menyertakan kodedsn");
+    }
+    if (role === "dosen" && kodedsn) {
+      const dsn = await prisma.dosen.findUnique({ where: { kodedsn } });
+      if (!dsn) throw new Error(`Dosen dengan kode ${kodedsn} tidak ditemukan`);
+    }
+
+    const existing = await prisma.user.findUnique({ where: { username } });
+    if (existing) throw new Error("Username sudah digunakan");
+
+    const hashed = await hashPassword(password);
+
+    return prisma.user.create({
+      data: {
+        username,
+        password: hashed,
+        role,
+        kodedsn: role === "dosen" ? kodedsn : null,
+      },
+      select: {
+        idUser: true,
+        username: true,
+        role: true,
+        nim: true,
+        kodedsn: true,
+        createdAt: true,
+      },
+    });
   },
 
   async login({ username, password }: LoginInput) {

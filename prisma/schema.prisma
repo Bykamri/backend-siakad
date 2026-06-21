@@ -11,7 +11,6 @@ generator client {
 
 datasource db {
   provider = "mysql"
-  // url      = env("DATABASE_URL")
 }
 
 // ---------------------------------------------------------------------
@@ -49,17 +48,36 @@ enum Role {
 }
 
 // ---------------------------------------------------------------------
-// PRODI (Program Studi)
+// FAKULTAS
+// kode_fakultas: 1 digit, dipakai sebagai bagian pembentuk NIM & kode_prodi
+// ---------------------------------------------------------------------
+model Fakultas {
+  kodeFakultas String   @id @map("kode_fakultas") @db.Char(1)
+  namaFakultas String   @map("nama_fakultas") @db.VarChar(100)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  prodi Prodi[]
+
+  @@map("fakultas")
+}
+
+// ---------------------------------------------------------------------
+// PRODI
+// kode_prodi (2 digit) = kode_fakultas + urutan prodi dalam fakultas itu.
+// Contoh: Fakultas Teknik (kode '4'), Teknik Informatika prodi ke-1
+// di fakultas itu -> kode_prodi '41'.
 // ---------------------------------------------------------------------
 model Prodi {
-  kodeProdi     String      @id @map("kode_prodi") @db.VarChar(2) 
-  namaProdi     String      @map("nama_prodi") @db.VarChar(100)
-  kodeFakultas  String      @map("kode_fakultas") @db.VarChar(1) 
-  urutanProdi   String      @map("urutan_prodi") @db.VarChar(1)  
+  kodeProdi    String   @id @map("kode_prodi") @db.Char(2)
+  namaProdi    String   @map("nama_prodi") @db.VarChar(100)
+  kodeFakultas String   @map("kode_fakultas") @db.Char(1)
+  createdAt    DateTime @default(now()) @map("created_at")
 
-  mahasiswa     Mahasiswa[]
-  dosen         Dosen[]     // Tambahan relasi ke Dosen
+  fakultas  Fakultas    @relation(fields: [kodeFakultas], references: [kodeFakultas])
+  dosen     Dosen[]
+  mahasiswa Mahasiswa[]
 
+  @@index([kodeFakultas], map: "idx_prodi_fakultas")
   @@map("prodi")
 }
 
@@ -70,20 +88,23 @@ model Dosen {
   kodedsn      String       @id @db.VarChar(10)
   namaDosen    String       @map("nama_dosen") @db.VarChar(100)
   tglLahir     DateTime     @map("tgl_lahir") @db.Date
-  
-  // Ganti `prodi String` menjadi relasi `kodeProdi`
-  kodeProdi    String       @map("kode_prodi") @db.VarChar(2) 
-  
+  kodeProdi    String       @map("kode_prodi") @db.Char(2)
   statusAktif  Boolean      @default(true) @map("status_aktif")
   foto         String?      @db.VarChar(255)
   jenisKelamin JenisKelamin @map("jenis_kelamin")
   createdAt    DateTime     @default(now()) @map("created_at")
   updatedAt    DateTime     @updatedAt @map("updated_at")
 
-  prodi         Prodi       @relation(fields: [kodeProdi], references: [kodeProdi])
+  prodi Prodi @relation(fields: [kodeProdi], references: [kodeProdi])
+
+  // 1 dosen bisa menjadi wali dari banyak mahasiswa
   mahasiswaWali Mahasiswa[] @relation("DosenWali")
-  jamKelas      JamKelas[]
-  user          User?
+
+  // 1 dosen bisa mengampu banyak jam_kelas (di berbagai matakuliah)
+  jamKelas JamKelas[]
+
+  // akun login terkait (1:1, opsional)
+  user User?
 
   @@index([kodeProdi], map: "idx_dosen_prodi")
   @@map("dosen")
@@ -91,34 +112,36 @@ model Dosen {
 
 // ---------------------------------------------------------------------
 // MAHASISWA
+// - kodedsnWali NULLABLE: saat self-register dosen wali belum
+//   ditentukan, admin akan assign manual kemudian.
+// - nim & angkatan DI-GENERATE OTOMATIS oleh sistem saat register,
+//   bukan diinput langsung oleh user (lihat services/nim.service.ts).
 // ---------------------------------------------------------------------
 model Mahasiswa {
-  nim           String          @id @db.VarChar(15)
-  nama          String          @db.VarChar(100)
-  tglLahir      DateTime        @map("tgl_lahir") @db.Date
-  jenisKelamin  JenisKelamin    @map("jenis_kelamin")
-  statusMhs     StatusMahasiswa @default(aktif) @map("status_mhs")
-  ijazah        String?         @db.VarChar(255)
-  foto          String?         @db.VarChar(255)
-  
-  // Relasi ke Prodi
-  kodeProdi     String          @map("kode_prodi") @db.VarChar(2) 
-  
-  // Dibuat opsional karena diset belakangan oleh admin
-  kodedsnWali   String?         @map("kodedsn_wali") @db.VarChar(10) 
-  
-  createdAt     DateTime        @default(now()) @map("created_at")
-  updatedAt     DateTime        @updatedAt @map("updated_at")
+  nim          String          @id @db.VarChar(8)
+  nama         String          @db.VarChar(100)
+  tglLahir     DateTime        @map("tgl_lahir") @db.Date
+  jenisKelamin JenisKelamin    @map("jenis_kelamin")
+  statusMhs    StatusMahasiswa @default(aktif) @map("status_mhs")
+  ijazah       String?         @db.VarChar(255)
+  foto         String?         @db.VarChar(255)
+  kodeProdi    String          @map("kode_prodi") @db.Char(2)
+  angkatan     Int             @db.SmallInt
+  kodedsnWali  String?         @map("kodedsn_wali") @db.VarChar(10)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  updatedAt    DateTime        @updatedAt @map("updated_at")
 
-  prodi         Prodi   @relation(fields: [kodeProdi], references: [kodeProdi])
-  dosenWali     Dosen?  @relation("DosenWali", fields: [kodedsnWali], references: [kodedsn])
-  krs           Krs[]
-  user          User?
+  prodi     Prodi  @relation(fields: [kodeProdi], references: [kodeProdi])
+  dosenWali Dosen? @relation("DosenWali", fields: [kodedsnWali], references: [kodedsn])
+  krs       Krs[]
+  user      User?
 
   @@index([kodedsnWali], map: "idx_mhs_dosenwali")
   @@index([kodeProdi], map: "idx_mhs_prodi")
+  @@index([kodeProdi, angkatan], map: "idx_mhs_prodi_angkatan")
   @@map("mahasiswa")
 }
+
 // ---------------------------------------------------------------------
 // MATAKULIAH
 // ---------------------------------------------------------------------

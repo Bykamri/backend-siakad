@@ -1,10 +1,5 @@
 import { prisma } from "../utils/prisma";
-
-interface CreateMatakuliahInput {
-  kodemk: string;
-  namamk: string;
-  sks: number;
-}
+import type { CreateMatakuliahInput } from "../types/matakuliah";
 
 type UpdateMatakuliahInput = Partial<Omit<CreateMatakuliahInput, "kodemk">>;
 

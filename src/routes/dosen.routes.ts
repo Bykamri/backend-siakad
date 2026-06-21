@@ -4,38 +4,102 @@ import { dosenService } from "../services/dosen.service";
 
 export const dosenRoutes = new Elysia({ prefix: "/dosen" })
 
-  // Semua role yang sudah login boleh melihat data dosen
   .use(authGuard)
+
+  // GET / -- daftar dosen.
+  // admin       : semua dosen, filter opsional.
+  // dosen       : hanya dirinya sendiri (ditampilkan sebagai array 1 item).
+  // mahasiswa   : hanya dosen wali-nya + dosen pengampu MK yang sedang/
+  //               pernah diambil (lewat KRS) -- data ringkas saja.
   .get(
     "/",
-    async ({ query }) => {
-      const data = await dosenService.getAll({
-        prodi: query.prodi,
-        statusAktif: query.statusAktif === undefined ? undefined : query.statusAktif === "true",
-      });
+    async ({ query, user, set }) => {
+      if (user.role === "admin") {
+        const data = await dosenService.getAll({
+          kodeProdi: query.kodeProdi,
+          statusAktif: query.statusAktif === undefined ? undefined : query.statusAktif === "true",
+        });
+        return { success: true, data };
+      }
+
+      if (user.role === "dosen") {
+        const data = await dosenService.getByKode(user.kodedsn!);
+        return { success: true, data: [data] };
+      }
+
+      // mahasiswa
+      const data = await dosenService.getRingkasUntukMahasiswa(user.nim!);
       return { success: true, data };
     },
     {
       query: t.Object({
-        prodi: t.Optional(t.String()),
+        kodeProdi: t.Optional(t.String()),
         statusAktif: t.Optional(t.String()),
       }),
-      detail: { summary: "Daftar semua dosen (filter opsional)", tags: ["Dosen"] },
+      detail: {
+        summary: "[Admin, Dosen, Mahasiswa] Daftar dosen (hasil berbeda per role)",
+        description:
+          "Admin: semua dosen (bisa difilter kodeProdi/statusAktif). " +
+          "Dosen: hanya dirinya sendiri, ditampilkan sebagai array 1 item. " +
+          "Mahasiswa: hanya dosen wali-nya + dosen pengampu matakuliah yang sedang/pernah " +
+          "diambil (lewat KRS), dengan data RINGKAS (nama + kodedsn saja).",
+        tags: ["Dosen"],
+      },
     }
   )
 
+  // GET /:kodedsn -- detail satu dosen.
+  // admin     : detail lengkap, bebas kodedsn manapun.
+  // dosen     : detail lengkap, HANYA untuk dirinya sendiri.
+  // mahasiswa : data RINGKAS (nama + kodedsn saja), HANYA jika kodedsn
+  //             tersebut adalah dosen wali-nya atau pengampu MK yang
+  //             sedang/pernah diambil.
   .get(
     "/:kodedsn",
-    async ({ params, set }) => {
+    async ({ params, user, set }) => {
       try {
-        const data = await dosenService.getByKode(params.kodedsn);
+        if (user.role === "admin") {
+          const data = await dosenService.getByKode(params.kodedsn);
+          return { success: true, data };
+        }
+
+        if (user.role === "dosen") {
+          if (user.kodedsn !== params.kodedsn) {
+            set.status = 403;
+            return { success: false, message: "Anda hanya boleh mengakses data Anda sendiri" };
+          }
+          const data = await dosenService.getByKode(params.kodedsn);
+          return { success: true, data };
+        }
+
+        // mahasiswa
+        const relevan = await dosenService.getKodedsnRelevanUntukMahasiswa(user.nim!);
+        if (!relevan.includes(params.kodedsn)) {
+          set.status = 403;
+          return {
+            success: false,
+            message: "Anda hanya boleh mengakses dosen wali Anda atau dosen pengampu matakuliah yang Anda ambil",
+          };
+        }
+        const data = await dosenService.getRingkasByKode(params.kodedsn);
         return { success: true, data };
       } catch (err) {
         set.status = 404;
         return { success: false, message: (err as Error).message };
       }
     },
-    { detail: { summary: "Detail dosen + mahasiswa wali + jam kelas yang diampu", tags: ["Dosen"] } }
+    {
+      detail: {
+        summary: "[Admin, Dosen, Mahasiswa] Detail satu dosen (akses & data berbeda per role)",
+        description:
+          "Admin: detail lengkap, bebas kodedsn manapun. " +
+          "Dosen: detail lengkap, HANYA untuk dirinya sendiri (403 jika kodedsn lain). " +
+          "Mahasiswa: data RINGKAS (nama + kodedsn saja, tanpa prodi/status aktif/daftar " +
+          "mahasiswa wali), HANYA jika kodedsn tersebut dosen wali-nya atau dosen pengampu " +
+          "matakuliah yang sedang/pernah ia ambil (403 jika di luar itu).",
+        tags: ["Dosen"],
+      },
+    }
   )
 
   // Hanya admin yang boleh create/update/delete data dosen
@@ -57,12 +121,12 @@ export const dosenRoutes = new Elysia({ prefix: "/dosen" })
         kodedsn: t.String({ maxLength: 10 }),
         namaDosen: t.String(),
         tglLahir: t.String({ format: "date" }),
-        prodi: t.String(),
+        kodeProdi: t.String({ description: "Kode prodi 2 digit, contoh: 41" }),
         statusAktif: t.Optional(t.Boolean()),
         foto: t.Optional(t.String()),
         jenisKelamin: t.Union([t.Literal("L"), t.Literal("P")]),
       }),
-      detail: { summary: "Tambah dosen baru (admin only)", tags: ["Dosen"] },
+      detail: { summary: "[Admin] Tambah dosen baru", tags: ["Dosen"] },
     }
   )
 
@@ -81,12 +145,12 @@ export const dosenRoutes = new Elysia({ prefix: "/dosen" })
       body: t.Object({
         namaDosen: t.Optional(t.String()),
         tglLahir: t.Optional(t.String({ format: "date" })),
-        prodi: t.Optional(t.String()),
+        kodeProdi: t.Optional(t.String()),
         statusAktif: t.Optional(t.Boolean()),
         foto: t.Optional(t.String()),
         jenisKelamin: t.Optional(t.Union([t.Literal("L"), t.Literal("P")])),
       }),
-      detail: { summary: "Update data dosen (admin only)", tags: ["Dosen"] },
+      detail: { summary: "[Admin] Update data dosen", tags: ["Dosen"] },
     }
   )
 
@@ -108,5 +172,5 @@ export const dosenRoutes = new Elysia({ prefix: "/dosen" })
         };
       }
     },
-    { detail: { summary: "Hapus dosen (admin only)", tags: ["Dosen"] } }
+    { detail: { summary: "[Admin] Hapus dosen", tags: ["Dosen"] } }
   );

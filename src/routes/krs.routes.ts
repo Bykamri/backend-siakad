@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { authGuard, requireRole } from "../middleware/auth";
 import { krsService } from "../services/krs.service";
+import { mahasiswaService } from "../services/mahasiswa.service";
 
 export const krsRoutes = new Elysia({ prefix: "/krs" })
 
@@ -31,7 +32,12 @@ export const krsRoutes = new Elysia({ prefix: "/krs" })
         semester: t.Union([t.Literal("Ganjil"), t.Literal("Genap")]),
       }),
       detail: {
-        summary: "Mahasiswa mengambil matakuliah (pilih jam kelas, dosen penilai otomatis)",
+        summary: "[Admin, Mahasiswa] Ambil matakuliah (pilih jam kelas)",
+        description:
+          "Mahasiswa: hanya boleh mengambil untuk dirinya sendiri (field nim di body " +
+          "diabaikan, diganti otomatis dengan NIM dari token). Admin: boleh mengambilkan " +
+          "untuk NIM siapa pun (kasus input manual). Dosen penilai ditentukan otomatis " +
+          "dari dosen pengampu jam_kelas yang dipilih.",
         tags: ["KRS"],
       },
     }
@@ -40,6 +46,11 @@ export const krsRoutes = new Elysia({ prefix: "/krs" })
 export const krsViewRoutes = new Elysia({ prefix: "/krs" })
   .use(authGuard)
 
+  // GET /krs/mahasiswa/:nim -- lihat KRS + dosen penilai milik mahasiswa.
+  // admin     : bebas nim manapun.
+  // mahasiswa : hanya KRS dirinya sendiri.
+  // dosen     : hanya jika dia dosen wali mahasiswa tersebut (boleh lihat
+  //             seluruh nilai matakuliahnya, sesuai matriks akses).
   .get(
     "/mahasiswa/:nim",
     async ({ params, user, set }) => {
@@ -47,26 +58,29 @@ export const krsViewRoutes = new Elysia({ prefix: "/krs" })
         set.status = 403;
         return { success: false, message: "Anda hanya boleh mengakses KRS Anda sendiri" };
       }
+
+      if (user.role === "dosen") {
+        try {
+          // getByNimUntukDosenWali melempar error jika bukan dosen wali
+          await mahasiswaService.getByNimUntukDosenWali(params.nim, user.kodedsn!);
+        } catch (err) {
+          set.status = 403;
+          return { success: false, message: (err as Error).message };
+        }
+      }
+
       const data = await krsService.getByMahasiswa(params.nim);
       return { success: true, data };
     },
-    { detail: { summary: "Lihat KRS + dosen penilai milik mahasiswa", tags: ["KRS"] } }
-  )
-
-  .get(
-    "/dosen/:kodedsn/mahasiswa",
-    async ({ params, query, user, set }) => {
-      if (user.role === "dosen" && user.kodedsn !== params.kodedsn) {
-        set.status = 403;
-        return { success: false, message: "Anda hanya boleh mengakses data kelas yang Anda ampu sendiri" };
-      }
-      const data = await krsService.getMahasiswaUntukDinilai(params.kodedsn, query.kodemk);
-      return { success: true, data };
-    },
     {
-      query: t.Object({ kodemk: t.Optional(t.String()) }),
       detail: {
-        summary: "Daftar mahasiswa yang harus dinilai dosen (hanya di jam kelas yang ia ampu)",
+        summary: "[Admin, Dosen, Mahasiswa] Lihat KRS + dosen penilai milik mahasiswa",
+        description:
+          "Admin: bebas nim manapun. " +
+          "Mahasiswa: hanya KRS dirinya sendiri (403 jika nim lain). " +
+          "Dosen: hanya jika dia dosen WALI mahasiswa tersebut (403 jika bukan wali, " +
+          "termasuk jika dosen tersebut hanya pengampu salah satu matakuliahnya tapi " +
+          "bukan wali -- gunakan GET /mahasiswa/diampu untuk kasus itu).",
         tags: ["KRS"],
       },
     }
@@ -94,7 +108,12 @@ export const krsViewRoutes = new Elysia({ prefix: "/krs" })
         nilaiHuruf: t.Optional(t.String({ maxLength: 2 })),
       }),
       detail: {
-        summary: "Dosen input nilai (hanya dosen pengampu jam kelas terkait yang berhak)",
+        summary: "[Dosen] Input nilai mahasiswa",
+        description:
+          "Hanya dosen yang berhasil login. Khusus dosen yang menjadi PENGAMPU jam_kelas " +
+          "terkait KRS tersebut -- status dosen wali TIDAK relevan di sini (dosen wali yang " +
+          "bukan pengampu kelas tetap ditolak 403, dan dosen pengampu yang bukan wali tetap " +
+          "berhak input nilai).",
         tags: ["KRS"],
       },
     }
