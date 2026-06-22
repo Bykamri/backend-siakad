@@ -30,6 +30,37 @@ export const IJAZAH_MIME_TYPES = Object.keys(PDF_MIME_EXT);
 const ALL_MIME_EXT: Record<string, string> = { ...IMAGE_MIME_EXT, ...PDF_MIME_EXT };
 
 /**
+ * Pastikan UPLOAD_ROOT dan semua subdir (foto-dosen, foto-mahasiswa,
+ * ijazah) sudah ada di disk. Dipanggil SEKALI saat server start
+ * (src/index.ts), supaya folder sudah siap sebelum request upload
+ * pertama datang -- tidak menunggu lazy-create di saveUploadedFile.
+ *
+ * CATATAN PENTING (serverless/Vercel):
+ * Filesystem di Vercel serverless bersifat READ-ONLY (kecuali /tmp)
+ * dan EPHEMERAL (hilang tiap cold start). Fungsi ini sengaja TIDAK
+ * melempar error jika mkdir gagal -- hanya mencatat warning -- supaya
+ * tidak mematikan boot server saat dijalankan di lingkungan seperti
+ * itu. Untuk deployment Vercel, upload SEHARUSNYA sudah dialihkan ke
+ * Vercel Blob (@vercel/blob), bukan disk lokal.
+ */
+export async function ensureUploadDirs(): Promise<void> {
+  const dirs = [UPLOAD_ROOT, ...Object.values(UPLOAD_SUBDIR).map((sub) => join(UPLOAD_ROOT, sub))];
+
+  for (const dir of dirs) {
+    try {
+      await mkdir(dir, { recursive: true });
+    } catch (err) {
+      console.warn(
+        `⚠️  Gagal membuat folder upload "${dir}" (filesystem mungkin read-only, ` +
+          `misal di lingkungan serverless). Upload lokal tidak akan berfungsi ` +
+          `sampai ini diperbaiki atau dialihkan ke storage eksternal seperti Vercel Blob.`,
+        err
+      );
+    }
+  }
+}
+
+/**
  * Simpan file upload (Web API File dari body Elysia, lewat t.File()) ke
  * disk, di dalam uploads/<subdir>/. Nama file dibuat dari id (nim /
  * kodedsn) + timestamp supaya unik, sekaligus gampang dikenali asal
@@ -49,6 +80,9 @@ export async function saveUploadedFile(
   }
 
   const dir = join(UPLOAD_ROOT, subdir);
+  // Tetap dipanggil di sini juga (idempotent) sebagai jaga-jaga jika
+  // ensureUploadDirs() belum/gagal dijalankan saat startup, atau folder
+  // sempat terhapus manual selagi server berjalan.
   await mkdir(dir, { recursive: true });
 
   const safeId = idForFilename.replace(/[^a-zA-Z0-9_-]/g, "_");

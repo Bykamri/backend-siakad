@@ -8,6 +8,13 @@ import { mahasiswaRoutes } from "./routes/mahasiswa.routes";
 import { matakuliahRoutes } from "./routes/matakuliah.routes";
 import { krsRoutes, krsViewRoutes } from "./routes/krs.routes";
 import { prodiPublicRoutes, prodiAdminRoutes, fakultasRoutes } from "./routes/prodi.routes";
+import { ensureUploadDirs } from "./utils/upload";
+
+// Pastikan folder uploads/ (dan subfoldernya) sudah ada sebelum server
+// menerima request. Hanya relevan untuk mode lokal (Bun server) --
+// di Vercel serverless ini akan gagal diam-diam (lihat komentar di
+// ensureUploadDirs) karena filesystem read-only.
+await ensureUploadDirs();
 
 const app = new Elysia()
   .use(cors())
