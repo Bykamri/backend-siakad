@@ -1,6 +1,8 @@
 import { Elysia, t } from "elysia";
 import { authGuard, requireRole } from "../middleware/auth";
 import { dosenService } from "../services/dosen.service";
+import { saveUploadedFile, UPLOAD_SUBDIR, FOTO_MIME_TYPES } from "../utils/upload";
+
 
 export const dosenRoutes = new Elysia({ prefix: "/dosen" })
 
@@ -173,4 +175,31 @@ export const dosenRoutes = new Elysia({ prefix: "/dosen" })
       }
     },
     { detail: { summary: "[Admin] Hapus dosen", tags: ["Dosen"] } }
+  )
+    .post(
+    "/:kodedsn/foto",
+    async ({ params, body, set }) => {
+      try {
+        const relativePath = await saveUploadedFile(body.foto, UPLOAD_SUBDIR.fotoDosen, params.kodedsn);
+        const data = await dosenService.updateFoto(params.kodedsn, relativePath);
+        return { success: true, data };
+      } catch (err) {
+        set.status = 400;
+        return { success: false, message: (err as Error).message };
+      }
+    },
+    {
+      body: t.Object({
+        foto: t.File({ type: FOTO_MIME_TYPES, maxSize: "5m" }),
+      }),
+      detail: {
+        summary: "[Admin] Upload/ganti foto dosen",
+        description:
+          "Body multipart/form-data, field 'foto'. Format: JPG/PNG/WEBP, maksimal " +
+          "5MB. File lama otomatis dihapus saat diganti. Tersimpan di " +
+          "uploads/foto-dosen/, bisa diakses publik lewat " +
+          "GET /uploads/foto-dosen/<nama-file> (path = nilai kolom 'foto').",
+        tags: ["Dosen"],
+      },
+    }
   );

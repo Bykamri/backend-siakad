@@ -47,6 +47,13 @@ enum Role {
   mahasiswa
 }
 
+enum StatusVerifikasiIjazah {
+  belum_upload
+  menunggu
+  diterima
+  ditolak
+}
+
 // ---------------------------------------------------------------------
 // FAKULTAS
 // kode_fakultas: 1 digit, dipakai sebagai bagian pembentuk NIM & kode_prodi
@@ -124,6 +131,9 @@ model Mahasiswa {
   jenisKelamin JenisKelamin    @map("jenis_kelamin")
   statusMhs    StatusMahasiswa @default(aktif) @map("status_mhs")
   ijazah       String?         @db.VarChar(255)
+  ijazahStatus      StatusVerifikasiIjazah @default(belum_upload) @map("ijazah_status")
+  ijazahCatatan     String?                @map("ijazah_catatan") @db.VarChar(500)
+  ijazahDihapusPada DateTime?              @map("ijazah_dihapus_pada")
   foto         String?         @db.VarChar(255)
   kodeProdi    String          @map("kode_prodi") @db.Char(2)
   angkatan     Int             @db.SmallInt

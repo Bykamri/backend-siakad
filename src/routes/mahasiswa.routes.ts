@@ -2,6 +2,12 @@ import { Elysia, t } from "elysia";
 import { authGuard, requireRole } from "../middleware/auth";
 import { mahasiswaService } from "../services/mahasiswa.service";
 import { krsService } from "../services/krs.service";
+import {
+  saveUploadedFile,
+  UPLOAD_SUBDIR,
+  FOTO_MIME_TYPES,
+  IJAZAH_MIME_TYPES,
+} from "../utils/upload";
 
 export const mahasiswaRoutes = new Elysia({ prefix: "/mahasiswa" })
 
@@ -173,6 +179,55 @@ export const mahasiswaRoutes = new Elysia({ prefix: "/mahasiswa" })
         description:
           "Untuk input manual oleh admin (misal migrasi data lama). Pendaftaran mandiri " +
           "mahasiswa yang generate NIM otomatis tetap lewat POST /auth/register.",
+        tags: ["Mahasiswa"],
+      },
+    }
+  )
+
+  .post(
+    "/:nim/foto",
+    async ({ params, body, set }) => {
+      try {
+        const relativePath = await saveUploadedFile(body.foto, UPLOAD_SUBDIR.fotoMahasiswa, params.nim);
+        const data = await mahasiswaService.updateFoto(params.nim, relativePath);
+        return { success: true, data };
+      } catch (err) {
+        set.status = 400;
+        return { success: false, message: (err as Error).message };
+      }
+    },
+    {
+      body: t.Object({ foto: t.File({ type: FOTO_MIME_TYPES, maxSize: "5m" }) }),
+      detail: {
+        summary: "[Admin] Upload/ganti foto mahasiswa",
+        description:
+          "Body multipart/form-data, field 'foto'. JPG/PNG/WEBP, maksimal 5MB. " +
+          "File lama otomatis dihapus. Publik lewat GET /uploads/foto-mahasiswa/<nama-file>.",
+        tags: ["Mahasiswa"],
+      },
+    }
+  )
+
+  .post(
+    "/:nim/ijazah",
+    async ({ params, body, set }) => {
+      try {
+        const relativePath = await saveUploadedFile(body.ijazah, UPLOAD_SUBDIR.ijazah, params.nim);
+        const data = await mahasiswaService.updateIjazah(params.nim, relativePath);
+        return { success: true, data };
+      } catch (err) {
+        set.status = 400;
+        return { success: false, message: (err as Error).message };
+      }
+    },
+    {
+      body: t.Object({ ijazah: t.File({ type: IJAZAH_MIME_TYPES, maxSize: "10m" }) }),
+      detail: {
+        summary: "[Admin] Upload/ganti scan ijazah mahasiswa (PDF)",
+        description:
+          "Body multipart/form-data, field 'ijazah'. Hanya PDF, maksimal 10MB. " +
+          "File lama otomatis dihapus. BERBEDA dari foto -- ijazah TIDAK publik, " +
+          "hanya admin atau mahasiswa pemiliknya yang bisa GET /uploads/ijazah/<nama-file>.",
         tags: ["Mahasiswa"],
       },
     }

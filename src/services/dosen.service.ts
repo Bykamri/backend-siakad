@@ -1,5 +1,7 @@
 import { prisma } from "../utils/prisma";
 import type { CreateDosenInput } from "../types/dosen";
+import { deleteUploadedFileIfExists } from "../utils/upload";
+
 
 type UpdateDosenInput = Partial<Omit<CreateDosenInput, "kodedsn">>;
 
@@ -107,12 +109,22 @@ export const dosenService = {
     });
   },
 
-  async remove(kodedsn: string) {
+async updateFoto(kodedsn: string, relativePath: string) {
     const existing = await prisma.dosen.findUnique({ where: { kodedsn } });
     if (!existing) throw new Error(`Dosen dengan kode ${kodedsn} tidak ditemukan`);
 
-    // FK RESTRICT akan otomatis menolak penghapusan jika dosen masih
-    // jadi wali mahasiswa atau pengampu jam_kelas — pesan ditangkap di route.
+    await deleteUploadedFileIfExists(existing.foto);
+
+    return prisma.dosen.update({
+      where: { kodedsn },
+      data: { foto: relativePath },
+      select: { kodedsn: true, namaDosen: true, foto: true },
+    });
+  },
+
+  async remove(kodedsn: string) {
+    const existing = await prisma.dosen.findUnique({ where: { kodedsn } });
+    if (!existing) throw new Error(`Dosen dengan kode ${kodedsn} tidak ditemukan`);
     return prisma.dosen.delete({ where: { kodedsn } });
   },
 };

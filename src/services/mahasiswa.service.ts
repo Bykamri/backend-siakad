@@ -1,5 +1,6 @@
 import { prisma } from "../utils/prisma";
 import type { CreateMahasiswaInput } from "../types/mahasiswa";
+import { deleteUploadedFileIfExists } from "../utils/upload";
 
 type UpdateMahasiswaInput = Partial<Omit<CreateMahasiswaInput, "nim">>;
 
@@ -137,6 +138,48 @@ export const mahasiswaService = {
         tglLahir: input.tglLahir ? new Date(input.tglLahir) : undefined,
       },
     });
+  },
+
+  // Upload/ganti foto mahasiswa. File lama (jika ada) otomatis dihapus.
+  async updateFoto(nim: string, relativePath: string) {
+    const existing = await prisma.mahasiswa.findUnique({ where: { nim } });
+    if (!existing) throw new Error(`Mahasiswa dengan NIM ${nim} tidak ditemukan`);
+
+    await deleteUploadedFileIfExists(existing.foto);
+
+    return prisma.mahasiswa.update({
+      where: { nim },
+      data: { foto: relativePath },
+      select: { nim: true, nama: true, foto: true },
+    });
+  },
+
+
+  // Upload/ganti scan ijazah (PDF). Biasanya dipakai admin saat mahasiswa
+  // lulus, tapi tidak dipaksa cek statusMhs di sini supaya admin tetap
+  // bisa upload/koreksi file kapan saja.
+  async updateIjazah(nim: string, relativePath: string) {
+    const existing = await prisma.mahasiswa.findUnique({ where: { nim } });
+    if (!existing) throw new Error(`Mahasiswa dengan NIM ${nim} tidak ditemukan`);
+
+    await deleteUploadedFileIfExists(existing.ijazah);
+
+    return prisma.mahasiswa.update({
+      where: { nim },
+      data: { ijazah: relativePath },
+      select: { nim: true, nama: true, ijazah: true },
+    });
+  },
+
+  // Dipakai src/index.ts untuk cek kepemilikan saat mahasiswa minta akses
+  // GET /uploads/ijazah/<file> -- mencocokkan path file dengan kolom
+  // ijazah mahasiswa, return nim pemiliknya (atau null jika tidak ada).
+  async getNimByIjazahPath(relativePath: string): Promise<string | null> {
+    const mhs = await prisma.mahasiswa.findFirst({
+      where: { ijazah: relativePath },
+      select: { nim: true },
+    });
+    return mhs?.nim ?? null;
   },
 
   async remove(nim: string) {
