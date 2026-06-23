@@ -6,6 +6,7 @@ generated
 
 # migration files (di-generate ulang via `bun run prisma:migrate`)
 prisma/migrations
+prisma/migrations-pg
 # output
 out
 dist

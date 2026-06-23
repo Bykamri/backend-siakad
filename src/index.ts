@@ -8,3 +8,4 @@ console.log(
   `🦊 dbakademik API jalan di http://${app.server?.hostname}:${app.server?.port}`
 );
 console.log(`📚 Swagger docs: http://${app.server?.hostname}:${app.server?.port}/docs`);
+

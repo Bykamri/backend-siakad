@@ -8,12 +8,12 @@
     "dev:xampp": "bun --env-file=.env.xampp run --watch src/index.ts",
     "dev:supabase": "bun --env-file=.env.supabase run --watch src/index.ts",
     "start": "bun run src/index.ts",
-    "prisma:generate": "bunx prisma generate",
-    "prisma:generate:pg": "bunx prisma generate --schema=prisma/schema.postgresql.prisma",
-    "prisma:migrate": "bunx prisma migrate dev",
-    "prisma:migrate:pg": "bunx prisma migrate dev --schema=prisma/schema.postgresql.prisma",
-    "prisma:studio": "bunx prisma studio",
-    "prisma:studio:pg": "bunx prisma studio --schema=prisma/schema.postgresql.prisma"
+    "prisma:generate": "PRISMA_ENV=xampp bunx prisma generate",
+    "prisma:generate:pg": "PRISMA_ENV=supabase bunx prisma generate",
+    "prisma:migrate": "PRISMA_ENV=xampp bunx prisma migrate dev",
+    "prisma:migrate:pg": "PRISMA_ENV=supabase bunx prisma migrate dev --name init",
+    "prisma:studio": "PRISMA_ENV=xampp bunx prisma studio",
+    "prisma:studio:pg": "PRISMA_ENV=supabase bunx prisma studio"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
