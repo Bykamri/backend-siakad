@@ -5,14 +5,20 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/index.ts",
+    "dev:xampp": "bun --env-file=.env.xampp run --watch src/index.ts",
+    "dev:supabase": "bun --env-file=.env.supabase run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "prisma:generate": "bunx prisma generate",
+    "prisma:generate:pg": "bunx prisma generate --schema=prisma/schema.postgresql.prisma",
     "prisma:migrate": "bunx prisma migrate dev",
-    "prisma:studio": "bunx prisma studio"
+    "prisma:migrate:pg": "bunx prisma migrate dev --schema=prisma/schema.postgresql.prisma",
+    "prisma:studio": "bunx prisma studio",
+    "prisma:studio:pg": "bunx prisma studio --schema=prisma/schema.postgresql.prisma"
   },
   "devDependencies": {
     "@types/bcryptjs": "^3.0.0",
     "@types/bun": "latest",
+    "@types/pg": "^8.11.0",
     "dotenv": "^17.4.2",
     "prisma": "^7.8.0"
   },
@@ -24,9 +30,12 @@
     "@elysiajs/jwt": "^1.4.2",
     "@elysiajs/swagger": "^1.3.1",
     "@prisma/adapter-mariadb": "^7.8.0",
+    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@vercel/blob": "^0.27.0",
     "bcryptjs": "^3.0.3",
     "elysia": "^1.4.29",
-    "mariadb": "^3.5.3"
+    "mariadb": "^3.5.3",
+    "pg": "^8.13.0"
   }
 }

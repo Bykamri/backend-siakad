@@ -101,6 +101,18 @@ export const jamKelasService = {
   async remove(idJamkelas: number) {
     const existing = await prisma.jamKelas.findUnique({ where: { idJamkelas } });
     if (!existing) throw new Error(`Jam kelas dengan id ${idJamkelas} tidak ditemukan`);
+
+    const krsAktif = await prisma.krs.findMany({
+      where: { idJamkelas },
+      select: { nim: true },
+    });
+    if (krsAktif.length > 0) {
+      const daftarNim = krsAktif.map((k) => k.nim).join(", ");
+      throw new Error(
+        `Jam kelas tidak dapat dihapus karena masih ada ${krsAktif.length} mahasiswa yang terdaftar (NIM: ${daftarNim}). Hapus KRS mahasiswa tersebut terlebih dahulu.`
+      );
+    }
+
     return prisma.jamKelas.delete({ where: { idJamkelas } });
   },
 };

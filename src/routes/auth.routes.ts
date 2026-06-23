@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { jwtPlugin, authGuard, requireRole } from "../middleware/auth";
+import { jwtPlugin } from "../middleware/auth";
 import { authService } from "../services/auth.service";
 
 export const authRoutes = new Elysia({ prefix: "/auth" })
@@ -72,38 +72,6 @@ export const authRoutes = new Elysia({ prefix: "/auth" })
           "Tidak perlu login sebelumnya. Mendukung login menggunakan NIM bagi mahasiswa, " +
           "Kode Dosen bagi dosen, dan username khusus bagi administrator. Token JWT yang " +
           "dihasilkan berisi role, sehingga endpoint lain otomatis tahu hak akses Anda.",
-        tags: ["Auth"],
-      },
-    }
-  )
-
-  // Hanya admin yang boleh membuat akun admin/dosen baru
-  .use(requireRole(["admin"]))
-  .post(
-    "/register-staff",
-    async ({ body, set }) => {
-      try {
-        const user = await authService.registerStaff(body);
-        set.status = 201;
-        return { success: true, data: user };
-      } catch (err) {
-        set.status = 400;
-        return { success: false, message: (err as Error).message };
-      }
-    },
-    {
-      body: t.Object({
-        username: t.String({ minLength: 3 }),
-        password: t.String({ minLength: 6 }),
-        role: t.Union([t.Literal("admin"), t.Literal("dosen")]),
-        kodedsn: t.Optional(t.String()),
-      }),
-      detail: {
-        summary: "[Admin] Buat akun admin atau dosen baru",
-        description:
-          "Hanya admin yang bisa mengakses endpoint ini. Dipakai untuk membuat akun staff " +
-          "(admin/dosen) -- BUKAN untuk mahasiswa, karena mahasiswa selalu mendaftar sendiri " +
-          "lewat POST /auth/register.",
         tags: ["Auth"],
       },
     }

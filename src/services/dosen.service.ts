@@ -1,9 +1,30 @@
 import { prisma } from "../utils/prisma";
+import { hashPassword } from "../utils/password";
 import type { CreateDosenInput } from "../types/dosen";
 import { deleteUploadedFileIfExists } from "../utils/upload";
+import { hitungNomorUrutDosenBerikutnya, formatKodedsn } from "./kodedsn.service";
+import { Prisma } from "../../generated/prisma/client";
 
+const MAX_KODEDSN_RETRY = 5;
 
-type UpdateDosenInput = Partial<Omit<CreateDosenInput, "kodedsn">>;
+// Hanya field administratif yang boleh diubah oleh admin langsung
+// (bukan "data diri" seperti nama/tglLahir/jenisKelamin).
+type UpdateDosenAdminInput = {
+  kodeProdi?: string;
+  statusAktif?: boolean;
+};
+
+// Field "data diri" yang hanya boleh diubah oleh dosen sendiri
+// setelah admin membuka izin edit (editPermission = true).
+type UpdateDosenDataDiriInput = {
+  namaDosen?: string;
+  tglLahir?: string;
+  jenisKelamin?: "L" | "P";
+};
+
+// Password default untuk akun dosen baru yang dibuat oleh admin.
+// Dapat di-override lewat env variable DEFAULT_STAFF_PASSWORD.
+const DEFAULT_STAFF_PASSWORD = process.env.DEFAULT_STAFF_PASSWORD ?? "password123";
 
 export const dosenService = {
   // Admin: bebas lihat semua dosen, filter opsional
@@ -38,8 +59,7 @@ export const dosenService = {
     return Array.from(kodedsnSet);
   },
 
-  // Versi ringan untuk mahasiswa: hanya nama + kodedsn, tanpa data sensitif
-  // (prodi, status aktif, daftar mahasiswa wali, dll)
+  // Versi ringkas untuk mahasiswa: hanya nama + kodedsn, tanpa data sensitif
   async getRingkasUntukMahasiswa(nim: string) {
     const kodedsnList = await this.getKodedsnRelevanUntukMahasiswa(nim);
     if (kodedsnList.length === 0) return [];
@@ -76,22 +96,62 @@ export const dosenService = {
     return dosen;
   },
 
+  // Membuat dosen baru sekaligus membuat akun user-nya secara otomatis.
+  // kodedsn di-generate otomatis: kodeProdi (2 digit) + nomorUrut (3 digit).
+  // Contoh: prodi '11', dosen ke-6 -> kodedsn '11006'.
+  // Username = kodedsn, password = dari body atau DEFAULT_STAFF_PASSWORD.
   async create(input: CreateDosenInput) {
-    const existing = await prisma.dosen.findUnique({ where: { kodedsn: input.kodedsn } });
-    if (existing) throw new Error(`Kode dosen ${input.kodedsn} sudah digunakan`);
-
     const prodi = await prisma.prodi.findUnique({ where: { kodeProdi: input.kodeProdi } });
     if (!prodi) throw new Error(`Prodi dengan kode ${input.kodeProdi} tidak ditemukan`);
 
-    return prisma.dosen.create({
-      data: {
-        ...input,
-        tglLahir: new Date(input.tglLahir),
-      },
-    });
+    const { password, ...dosenData } = input;
+    const hashedPassword = await hashPassword(password ?? DEFAULT_STAFF_PASSWORD);
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_KODEDSN_RETRY; attempt++) {
+      try {
+        return await prisma.$transaction(async (tx) => {
+          const nomorUrut = await hitungNomorUrutDosenBerikutnya(tx, input.kodeProdi);
+          const kodedsn = formatKodedsn(input.kodeProdi, nomorUrut);
+
+          const dosen = await tx.dosen.create({
+            data: {
+              ...dosenData,
+              kodedsn,
+              tglLahir: new Date(dosenData.tglLahir),
+            },
+          });
+
+          await tx.user.create({
+            data: {
+              username: kodedsn,
+              password: hashedPassword,
+              role: "dosen",
+              kodedsn,
+            },
+          });
+
+          return dosen;
+        });
+      } catch (err: unknown) {
+        const isUniqueConflict =
+          err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+        if (isUniqueConflict) {
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    console.error("Gagal generate kodedsn unik setelah beberapa kali percobaan:", lastError);
+    throw new Error("Gagal membuat kode dosen, silakan coba lagi.");
   },
 
-  async update(kodedsn: string, input: UpdateDosenInput) {
+  // Update oleh ADMIN: hanya field administratif (kodeProdi, statusAktif).
+  // Data diri (nama, tglLahir, jenisKelamin) hanya bisa diubah dosen sendiri
+  // lewat updateDataDiri() setelah admin memberi izin.
+  async update(kodedsn: string, input: UpdateDosenAdminInput) {
     const existing = await prisma.dosen.findUnique({ where: { kodedsn } });
     if (!existing) throw new Error(`Dosen dengan kode ${kodedsn} tidak ditemukan`);
 
@@ -102,14 +162,57 @@ export const dosenService = {
 
     return prisma.dosen.update({
       where: { kodedsn },
+      data: input,
+    });
+  },
+
+  // Update DATA DIRI oleh DOSEN SENDIRI.
+  // Syarat: editPermission harus true (sudah dibuka oleh admin).
+  // Setelah berhasil disimpan, editPermission otomatis di-reset ke false.
+  async updateDataDiri(kodedsn: string, input: UpdateDosenDataDiriInput) {
+    const existing = await prisma.dosen.findUnique({ where: { kodedsn } });
+    if (!existing) throw new Error(`Dosen dengan kode ${kodedsn} tidak ditemukan`);
+
+    if (!existing.editPermission) {
+      throw new Error(
+        "Anda belum mendapat izin edit dari admin. Hubungi admin untuk membuka izin edit."
+      );
+    }
+
+    return prisma.dosen.update({
+      where: { kodedsn },
       data: {
         ...input,
         tglLahir: input.tglLahir ? new Date(input.tglLahir) : undefined,
+        editPermission: false, // auto-reset setelah dosen menyimpan
+      },
+      select: {
+        kodedsn: true,
+        namaDosen: true,
+        tglLahir: true,
+        jenisKelamin: true,
+        editPermission: true,
+        updatedAt: true,
       },
     });
   },
 
-async updateFoto(kodedsn: string, relativePath: string) {
+  // ADMIN membuka izin edit untuk dosen tertentu.
+  // Setelah dosen menyimpan perubahannya, izin ini otomatis ter-reset.
+  async grantEditPermission(kodedsn: string) {
+    const existing = await prisma.dosen.findUnique({ where: { kodedsn } });
+    if (!existing) throw new Error(`Dosen dengan kode ${kodedsn} tidak ditemukan`);
+
+    return prisma.dosen.update({
+      where: { kodedsn },
+      data: { editPermission: true },
+      select: { kodedsn: true, namaDosen: true, editPermission: true },
+    });
+  },
+
+  // Upload/ganti foto dosen. Dapat dilakukan DOSEN SENDIRI kapan saja
+  // tanpa perlu izin admin. File lama (jika ada) otomatis dihapus.
+  async updateFoto(kodedsn: string, relativePath: string) {
     const existing = await prisma.dosen.findUnique({ where: { kodedsn } });
     if (!existing) throw new Error(`Dosen dengan kode ${kodedsn} tidak ditemukan`);
 

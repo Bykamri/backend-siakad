@@ -1,6 +1,11 @@
 // =====================================================================
-// PRISMA SCHEMA: dbakademik
-// Mengikuti skema SQL yang sudah divalidasi (dbakademik_schema.sql)
+// PRISMA SCHEMA: dbakademik — PostgreSQL (Supabase / Vercel)
+// Identik dengan schema.prisma (MySQL) kecuali:
+//   - provider: postgresql
+//   - @db.UnsignedTinyInt  → @db.SmallInt
+//   - @db.Time(0)          → @db.Time
+// Output ke direktori yang sama supaya seluruh kode service tidak perlu
+// diubah. Jalankan `bun run prisma:generate:pg` sebelum dev:supabase.
 // =====================================================================
 
 generator client {
@@ -10,7 +15,7 @@ generator client {
 }
 
 datasource db {
-  provider = "mysql"
+  provider = "postgresql"
 }
 
 // ---------------------------------------------------------------------
@@ -108,14 +113,9 @@ model Dosen {
 
   prodi Prodi @relation(fields: [kodeProdi], references: [kodeProdi])
 
-  // 1 dosen bisa menjadi wali dari banyak mahasiswa
   mahasiswaWali Mahasiswa[] @relation("DosenWali")
-
-  // 1 dosen bisa mengampu banyak jam_kelas (di berbagai matakuliah)
-  jamKelas JamKelas[]
-
-  // akun login terkait (1:1, opsional)
-  user User?
+  jamKelas      JamKelas[]
+  user          User?
 
   @@index([kodeProdi], map: "idx_dosen_prodi")
   @@map("dosen")
@@ -123,12 +123,6 @@ model Dosen {
 
 // ---------------------------------------------------------------------
 // MAHASISWA
-// - kodedsnWali NULLABLE: saat self-register dosen wali belum
-//   ditentukan, admin akan assign manual kemudian.
-// - nim & angkatan DI-GENERATE OTOMATIS oleh sistem saat register,
-//   bukan diinput langsung oleh user (lihat services/nim.service.ts).
-// - editPermission: flag yang di-set admin supaya mahasiswa bisa update
-//   data dirinya (nama, tglLahir, jenisKelamin). Auto-reset setelah save.
 // ---------------------------------------------------------------------
 model Mahasiswa {
   nim               String                 @id @db.VarChar(8)
@@ -165,7 +159,7 @@ model Mahasiswa {
 model Matakuliah {
   kodemk    String   @id @db.VarChar(10)
   namamk    String   @db.VarChar(100)
-  sks       Int      @db.UnsignedTinyInt
+  sks       Int      @db.SmallInt
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -176,9 +170,6 @@ model Matakuliah {
 
 // ---------------------------------------------------------------------
 // JAM_KELAS
-// Tiap matakuliah maksimal 3 baris (nama_kelas A/B/C), tiap baris
-// diampu oleh 1 dosen (max 3 dosen per matakuliah karena uq_mk_dosen
-// + trigger pembatas 3 baris yang sudah dipasang di level SQL).
 // ---------------------------------------------------------------------
 model JamKelas {
   idJamkelas Int      @id @default(autoincrement()) @map("id_jamkelas")
@@ -186,8 +177,8 @@ model JamKelas {
   kodedsn    String   @db.VarChar(10)
   namaKelas  String   @map("nama_kelas") @db.VarChar(5)
   hari       Hari
-  jamMulai   DateTime @map("jam_mulai") @db.Time(0)
-  jamSelesai DateTime @map("jam_selesai") @db.Time(0)
+  jamMulai   DateTime @map("jam_mulai") @db.Time
+  jamSelesai DateTime @map("jam_selesai") @db.Time
   ruangan    String?  @db.VarChar(20)
   createdAt  DateTime @default(now()) @map("created_at")
 
@@ -204,9 +195,6 @@ model JamKelas {
 
 // ---------------------------------------------------------------------
 // KRS (Kartu Rencana Studi)
-// Dosen penilai TIDAK disimpan langsung di sini — didapat lewat
-// relasi idJamkelas -> JamKelas -> Dosen, supaya selalu konsisten
-// dengan dosen pengampu kelas yang dipilih mahasiswa.
 // ---------------------------------------------------------------------
 model Krs {
   idKrs         Int       @id @default(autoincrement()) @map("id_krs")
@@ -230,9 +218,6 @@ model Krs {
 
 // ---------------------------------------------------------------------
 // USERS (autentikasi & role)
-// Validasi "role harus konsisten dengan nim/kodedsn yang diisi"
-// ditegakkan via trigger di level SQL (trg_users_role_check_*),
-// dan didobel-cek di Service layer sebelum insert/update.
 // ---------------------------------------------------------------------
 model User {
   idUser    Int       @id @default(autoincrement()) @map("id_user")

@@ -9,4 +9,5 @@ export interface CreateMahasiswaInput {
   kodeProdi: string;
   angkatan: number;
   kodedsnWali?: string;
+  password?: string;
 }

@@ -84,47 +84,6 @@ export const authService = {
     throw new Error("Gagal membuat NIM, silakan coba daftar ulang.");
   },
 
-  // Dipakai admin untuk membuat akun ADMIN atau DOSEN (bukan mahasiswa,
-  // karena mahasiswa selalu lewat self-register di atas).
-  async registerStaff(input: {
-    username: string;
-    password: string;
-    role: "admin" | "dosen";
-    kodedsn?: string;
-  }) {
-    const { username, password, role, kodedsn } = input;
-
-    if (role === "dosen" && !kodedsn) {
-      throw new Error("Role dosen wajib menyertakan kodedsn");
-    }
-    if (role === "dosen" && kodedsn) {
-      const dsn = await prisma.dosen.findUnique({ where: { kodedsn } });
-      if (!dsn) throw new Error(`Dosen dengan kode ${kodedsn} tidak ditemukan`);
-    }
-
-    const existing = await prisma.user.findUnique({ where: { username } });
-    if (existing) throw new Error("Username sudah digunakan");
-
-    const hashed = await hashPassword(password);
-
-    return prisma.user.create({
-      data: {
-        username,
-        password: hashed,
-        role,
-        kodedsn: role === "dosen" ? kodedsn : null,
-      },
-      select: {
-        idUser: true,
-        username: true,
-        role: true,
-        nim: true,
-        kodedsn: true,
-        createdAt: true,
-      },
-    });
-  },
-
   async login({ username, password }: LoginInput) {
     const user = await prisma.user.findUnique({ where: { username } });
 

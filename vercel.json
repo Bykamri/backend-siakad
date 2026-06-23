@@ -1,0 +1,5 @@
+{
+  "version": 2,
+  "buildCommand": "bun run prisma:generate:pg",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+}
