@@ -17,11 +17,10 @@ import type { Prisma } from "../../generated/prisma/client";
  * pertengahan tahun).
  */
 export function hitungAngkatan(tanggalDaftar: Date = new Date()): number {
-  const bulan = tanggalDaftar.getMonth() + 1; // getMonth() 0-indexed
+  const bulan = tanggalDaftar.getMonth() + 1;
   const tahun = tanggalDaftar.getFullYear();
   return bulan >= 7 ? tahun + 1 : tahun;
 }
-
 /**
  * Hitung nomor urut berikutnya untuk kodeProdi tertentu, dengan COUNT
  * sederhana (nomor urut = jumlah mahasiswa existing di prodi itu + 1).
