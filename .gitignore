@@ -6,7 +6,6 @@ generated
 
 # migration files (di-generate ulang via `bun run prisma:migrate`)
 prisma/migrations
-prisma/migrations-pg
 # output
 out
 dist
@@ -24,7 +23,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 # dotenv environment variable files
 .env
 .env.xampp
-.env.supabase
 .env.development.local
 .env.test.local
 .env.production.local

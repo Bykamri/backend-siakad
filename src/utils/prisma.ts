@@ -1,31 +1,29 @@
 import { createRequire } from "node:module";
-import { PrismaClient } from "../../generated/prisma/client";
+import { PrismaClient } from "../../generated/prisma";
 
-// Cek VERCEL=1 (build & runtime Vercel) ATAU DATABASE_PROVIDER eksplisit
-const isPostgres =
-  !!process.env.VERCEL || process.env.DATABASE_PROVIDER === "postgresql";
-
-// Pakai createRequire (sync) alih-alih dynamic import + top-level await.
-// Top-level await pada module yang banyak di-import (semua service pakai
-// prisma) membuat Bun gagal meng-link module graph di Vercel dengan
-// error "Requested module is not instantiated yet". createRequire tetap
-// memberi conditional load — hanya satu adapter yang dimuat per env.
-const require = createRequire(import.meta.url);
+// Single MySQL-compatible adapter dipakai untuk dev lokal (XAMPP/MariaDB)
+// maupun produksi serverless (TiDB Cloud Serverless via Vercel).
+// TiDB Serverless mewajibkan TLS — set DB_SSL=true di env produksi.
+const isServerless = !!process.env.VERCEL;
 
 function createAdapter() {
-  if (isPostgres) {
-    const { PrismaPg } = require("@prisma/adapter-pg");
-    return new PrismaPg({ connectionString: process.env.DATABASE_URL! });
-  }
-
+  // Load via createRequire supaya Bun/Vercel tidak ikut meng-evaluate
+  // ESM-nya saat bundling untuk runtime serverless.
+  const require = createRequire(import.meta.url);
   const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
+
+  const useSsl = process.env.DB_SSL === "true" || process.env.DB_SSL === "1";
+
   return new PrismaMariaDb({
     host: process.env.DB_HOST ?? "localhost",
     port: Number(process.env.DB_PORT ?? 3306),
-    user: process.env.DB_USER ?? "root",
+    user: process.env.DB_USER ?? process.env.DB_USERNAME ?? "root",
     password: process.env.DB_PASSWORD ?? "",
-    database: process.env.DB_NAME ?? "dbakademik",
-    connectionLimit: 5,
+    database: process.env.DB_NAME ?? process.env.DB_DATABASE ?? "dbakademik",
+    ssl: useSsl ? { rejectUnauthorized: true } : undefined,
+    connectionLimit: Number(
+      process.env.DB_CONNECTION_LIMIT ?? (isServerless ? 1 : 5)
+    ),
   });
 }
 

@@ -1,4 +1,4 @@
-import type { JenisKelamin } from "../../generated/prisma/client";
+import type { JenisKelamin } from "../../generated/prisma";
 
 export type Role = "admin" | "dosen" | "mahasiswa";
 

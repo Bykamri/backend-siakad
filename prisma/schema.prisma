@@ -4,15 +4,13 @@
 // =====================================================================
 
 generator client {
-  provider   = "prisma-client"
-  output     = "../generated/prisma"
-  engineType = "client"
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
 }
 
 datasource db {
-  // provider = "mysql"
-  provider  = "postgresql"
-
+  provider = "mysql"
+  url      = env("DATABASE_URL")
 }
 
 // ---------------------------------------------------------------------
